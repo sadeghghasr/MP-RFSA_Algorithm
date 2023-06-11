@@ -26,7 +26,7 @@ class Link:
         This class determines the features of links
     """
     def __init__(self, src, dst, length):
-        self.max_number_of_fibers_in_this_link = 30
+        self.max_number_of_fibers_in_this_link = 50
         self.src = src
         self.dst = dst
         self.length = length
@@ -62,6 +62,7 @@ class Transponder:
         self.reference_node = basic_demand.src
         self.all_obj_links = all_obj_links
         self.reference_fiber = None
+        self.other_terminal_node = basic_demand.dst
         self.reference_link = None
         self.assigned_path_for_demand = None
         self.assigned_demand = basic_demand
@@ -103,7 +104,8 @@ class Transponder:
     def fully_release_transponder(self):
         for l_id in range(len(self.reference_link)):
             for obj_ll in self.all_obj_links:
-                if (obj_ll.src == self.reference_link[l_id][0]) and (obj_ll.dst == self.reference_link[l_id][1]):
+                if (obj_ll.src == self.reference_link[l_id][0] and obj_ll.dst == self.reference_link[l_id][1]) or (
+                        obj_ll.src == self.reference_link[l_id][1] and obj_ll.dst == self.reference_link[l_id][0]):
                     obj_ll.list_of_fibers[self.reference_fiber[l_id]].channels_state[self.assigned_channel_idx] = 0
                 if sum(obj_ll.list_of_fibers[self.reference_fiber[l_id]].channels_state) == 0:
                     obj_ll.state_of_fibers[self.reference_fiber[l_id]] = 0
@@ -179,7 +181,7 @@ class Demand:
     def get_three_shortest_paths(self):
         self.three_shortest_paths = []
         sp = nx.shortest_simple_paths(self.network_topology, self.src, self.dst)
-        k = 3
+        k = 1  # for simplicity, we use only the shortest path
         for counter, path in enumerate(sp):
             self.three_shortest_paths.append(path)
             if counter == k - 1:
@@ -198,12 +200,19 @@ class TimePeriod:
             for idx in range(len(list_of_nodes)):
                 for idx_prime in range(len(list_of_nodes)):
                     if idx != idx_prime:
-                        self.traffic_matrix.append(Demand(list_of_nodes[idx], list_of_nodes[idx_prime],
-                                                          random.randint(1, 7), net))  #random.randint(5, 7)
-        self.traffic_matrix = [self.traffic_matrix[1], self.traffic_matrix[3], self.traffic_matrix[6],
-                               self.traffic_matrix[8], self.traffic_matrix[9], self.traffic_matrix[13],
-                               self.traffic_matrix[19], self.traffic_matrix[18], self.traffic_matrix[15]]
-        # self.traffic_matrix = random.sample(self.traffic_matrix, 10)
+                        if there_is_a_demand_with_these_terminal(self.traffic_matrix, list_of_nodes[idx], list_of_nodes[idx_prime]):
+                            continue
+                        else:
+                            n_traffic = random.randint(1, 7)
+                            self.traffic_matrix.append(Demand(list_of_nodes[idx], list_of_nodes[idx_prime],
+                                                         n_traffic , net))  #random.randint(5, 7)
+                            # self.traffic_matrix.append(Demand(list_of_nodes[idx_prime], list_of_nodes[idx],
+                            #                                   n_traffic, net))  # random.randint(5, 7)
+
+        # self.traffic_matrix = [self.traffic_matrix[1]]#, self.traffic_matrix[3], self.traffic_matrix[6],
+        #                        self.traffic_matrix[8], self.traffic_matrix[9], self.traffic_matrix[13],
+        #                        self.traffic_matrix[19], self.traffic_matrix[18], self.traffic_matrix[15]]
+        # self.traffic_matrix = random.sample(self.traffic_matrix, 1)
         return self.traffic_matrix
 
     def load_traffic_matrix(self, traffic_mat):
@@ -212,11 +221,14 @@ class TimePeriod:
 
 ################## Function Definitions ##################
 
-def get_all_links_of_path(ph):
+def get_all_links_of_path(ph, reverse=False):
     list_of_links = []
     for n in range(len(ph) - 1):
         list_of_links.append((ph[n], ph[n+1]))
+        if reverse == True:
+            list_of_links.append((ph[n + 1], ph[n]))
     return list_of_links
+
 
 def find_index_of_available_fiber_for_specific_channel(set_of_fibers, my_channel_idx):
     r_idx = None
@@ -228,6 +240,15 @@ def find_index_of_available_fiber_for_specific_channel(set_of_fibers, my_channel
     return r_idx
 
 
+def there_is_a_demand_with_these_terminal(dem_list, t1, t2):
+    r = 0
+    for d in dem_list:
+        if (d.src == t1 and d.dst == t2) or (d.src == t2 and d.dst == t1):
+            r = 1
+            break
+    return r
+
+
 ################# Main Body of The Project ##############
 
 ### read network topology ###:
@@ -237,13 +258,13 @@ cell_range = 'A2:C52'
 link_list = [[cell.value for cell in row] for row in ws[cell_range]]
 
 network = nx.Graph()
-# all_nodes = [k + 1 for k in range(max([l[1] for l in link_list]))]
-all_nodes = [1, 2, 3, 4, 5]
+all_nodes = [k + 1 for k in range(max([l[1] for l in link_list]))]
+# all_nodes = [1, 2, 3, 4, 5]
 num_nodes = len(all_nodes)
 network.add_nodes_from(all_nodes)
-# list_of_all_links = [tuple(j) for j in link_list]
-list_of_all_links = [(1, 2, 210), (1, 4, 100), (2, 3, 150), (2, 4, 140), (3, 4, 200), (3, 5, 210),
-                                 (4, 5, 120)]
+list_of_all_links = [tuple(j) for j in link_list]
+# list_of_all_links = [(1, 2, 210), (1, 4, 100), (2, 3, 150), (2, 4, 140), (3, 4, 200), (3, 5, 210),
+#                         (4, 5, 120)]
 network.add_weighted_edges_from(list_of_all_links, weight='length')
 all_links = []
 for lin in list_of_all_links:
@@ -253,7 +274,7 @@ for lin in list_of_all_links:
 my_network = nx.DiGraph(network)
 
 ### Time periods and generate traffic matrix ###
-total_number_of_periods = 4
+total_number_of_periods = 24
 time_periods = []
 traffic_matrix = []
 for i in range(total_number_of_periods):
@@ -262,8 +283,8 @@ for i in range(total_number_of_periods):
     time_periods.append(tp)
 
 # save traffic matrix for first time:
-# with open('traffic_matrix10.pickle', 'wb') as f:
-#     pickle.dump(traffic_matrix, f, protocol=pickle.HIGHEST_PROTOCOL)
+with open('traffic_matrix10.pickle', 'wb') as f:
+    pickle.dump(traffic_matrix, f, protocol=pickle.HIGHEST_PROTOCOL)
 
 # load traffic matrix:
 # with open('traffic_matrix10.pickle', 'rb') as f:
@@ -279,7 +300,8 @@ with open('results_v2.txt', 'w', encoding="utf-8") as f:
             period = time_periods[period_idx]
             period.load_traffic_matrix(traffic_matrix[period_idx])
             print("\n***************************************** Time Period {} ****************************************\n".format(period_idx))
-            for dem in period.traffic_matrix:
+            for dem_idx in range(len(period.traffic_matrix)):
+                dem = period.traffic_matrix[dem_idx]
                 if period_idx == 0:
                     n_lightpaths = int(np.ceil(dem.n_25G_traffic/4))
                     list_of_lightpath = []
@@ -326,6 +348,8 @@ with open('results_v2.txt', 'w', encoding="utf-8") as f:
                                                 if first_idx_of_available_channels != None:
                                                     available_index_of_channel.append(first_idx_of_available_channels)
                                                     fibers_list.append(f_idx)
+                                                    # for reverse direction
+                                                    fibers_list.append(f_idx)
                                                     fiber_object.append(link.list_of_fibers[f_idx])
                                                     fiber_on_first_link_is_found = 1
                                                     break
@@ -335,6 +359,11 @@ with open('results_v2.txt', 'w', encoding="utf-8") as f:
                                                 fibers_list.append(
                                                     1000)  #this is a large number to prevent selecting unavailable path
                                             break
+                                    for link in all_links:
+                                        if (link.src == links_on_this_path[lin_idx][1]) and \
+                                                (link.dst == links_on_this_path[lin_idx][0]):
+                                            fiber_object.append(link.list_of_fibers[f_idx])
+                                            break
                                 else:
                                     for link in all_links:
                                         if (link.src == links_on_this_path[lin_idx][0]) and\
@@ -343,12 +372,21 @@ with open('results_v2.txt', 'w', encoding="utf-8") as f:
                                                 link.list_of_fibers, available_index_of_channel[-1])
                                             if fiber_index != None:
                                                 fibers_list.append(fiber_index)
+                                                # for reverse direction
+                                                fibers_list.append(fiber_index)
                                                 fiber_object.append(link.list_of_fibers[fiber_index])
                                             else:
                                                 print("{}th part of Demand {} can not be routed on path {}".format(
                                                     list_of_lightpath.index(lightpath), [dem.src, dem.dst], path))
                                                 fibers_list.append(1000)
                                             break
+                                        ### do same for reverse links ###
+                                    for link in all_links:
+                                        if (link.src == links_on_this_path[lin_idx][1]) and \
+                                                (link.dst == links_on_this_path[lin_idx][0]):
+                                            fiber_object.append(link.list_of_fibers[fiber_index])
+                                            break
+
 
                             available_fibers_on_each_link_of_the_path.append(fibers_list)
                             fiber_object_for_each_link_of_the_path.append(fiber_object)
@@ -369,15 +407,15 @@ with open('results_v2.txt', 'w', encoding="utf-8") as f:
                         list_of_maximum_used_fiber_index_for_each_period.append(
                             available_fibers_on_each_link_of_the_path[index_of_selected_path_for_this_lightpath])
                         links_for_the_selected_path = get_all_links_of_path(
-                            dem.get_three_shortest_paths()[index_of_selected_path_for_this_lightpath])
+                            dem.get_three_shortest_paths()[index_of_selected_path_for_this_lightpath], reverse=True)
                         for lll_idx in range(len(links_for_the_selected_path)):
                             for obj_link in all_links:
                                 if (obj_link.src == links_for_the_selected_path[lll_idx][0]) and\
                                         (obj_link.dst == links_for_the_selected_path[lll_idx][1]):
                                     obj_link.state_of_fibers[available_fibers_on_each_link_of_the_path[
                                         index_of_selected_path_for_this_lightpath][lll_idx]] = 1
-
-                        print("Demand {} with rate {} Gbps in time period {} uses {} Gbps of {}th transponders on path {} with this fiber indices {}".format(
+                        if True:
+                            print("Demand {} with rate {} Gbps in time period {} uses {} Gbps of {}th transponders on path {} with this fiber indices {}".format(
                             [dem.src, dem.dst], dem.n_25G_traffic * 25, period_idx,
                             100 * sum(lightpath.dedicated_transponder.state_of_slots)/4,
                             selected_channel_for_this_lightpath,
@@ -390,13 +428,14 @@ with open('results_v2.txt', 'w', encoding="utf-8") as f:
                                                                                time_periods[
                                                                                    period_idx - 1].traffic_matrix if (
                                                                         ddd.src == dem.src and ddd.dst == dem.dst)][0]
-                    print("for demand {}: this is difference {}".format([dem.src, dem.dst], difference_between_required_traffic))
+                    if True:
+                        print("for demand {}: this is difference {}".format([dem.src, dem.dst], difference_between_required_traffic))
                     if difference_between_required_traffic == 0:
                         continue
                     elif difference_between_required_traffic < 0:
-                        print("demand {} with traffic {} Gbps uses required lower traffic than previous period".format([dem.src, dem.dst], dem.n_25G_traffic * 25))
+                        print("demand between {} with traffic {} Gbps uses required lower traffic than previous period".format([dem.src, dem.dst], dem.n_25G_traffic * 25))
                         number_of_released_transponder_slots = 0
-                        flag = 0  # to break this "For" statement
+                        flag = 0  # to break this "For" statement and avoid releasing extra transponder slots
                         lightpaths_to_be_completely_removed = []
                         for my_lp_idx in reversed(range(len(list_of_all_used_lightpaths))):
                             if list_of_all_used_lightpaths[my_lp_idx].basic_demand.src != dem.src or list_of_all_used_lightpaths[my_lp_idx].basic_demand.dst != dem.dst:
@@ -433,8 +472,9 @@ with open('results_v2.txt', 'w', encoding="utf-8") as f:
                                         if dem.number_of_served_slots < dem.n_25G_traffic:
                                             dem.number_of_served_slots += 1
                                             used_lp.dedicated_transponder.fill_slots(1, period_idx)
-                                    print(
-                                        "{} Gbps of Demand {} with total traffic {} in time period {} is groomed with previously used transponder initiated at fiber {} of link {}".format(
+                                    if True:
+                                        print(
+                                        "{} Gbps of Demand between {} with total traffic {} in time period {} is groomed with previously used transponder initiated at fiber {} of link {}".format(
                                             (remained_cap - used_lp.dedicated_transponder.get_remain_capacity()) * 25,
                                             [dem.src, dem.dst], dem.n_25G_traffic * 25, period_idx,
                                             used_lp.dedicated_transponder.reference_fiber[0],
@@ -497,6 +537,8 @@ with open('results_v2.txt', 'w', encoding="utf-8") as f:
                                                     if first_idx_of_available_channels != None:
                                                         available_index_of_channel.append(first_idx_of_available_channels)
                                                         fibers_list.append(f_idx)
+                                                        # for reverse direction
+                                                        fibers_list.append(f_idx)
                                                         fiber_object.append(link.list_of_fibers[f_idx])
                                                         fiber_on_first_link_is_found = 1
                                                         break
@@ -506,6 +548,12 @@ with open('results_v2.txt', 'w', encoding="utf-8") as f:
                                                     fibers_list.append(
                                                         1000)  #this is a large number to prevent selecting unavailable path
                                                 break
+
+                                        for link in all_links:
+                                            if (link.src == links_on_this_path[lin_idx][1]) and \
+                                                    (link.dst == links_on_this_path[lin_idx][0]):
+                                                fiber_object.append(link.list_of_fibers[f_idx])
+                                                break
                                     else:
                                         for link in all_links:
                                             if (link.src == links_on_this_path[lin_idx][0]) and\
@@ -514,11 +562,20 @@ with open('results_v2.txt', 'w', encoding="utf-8") as f:
                                                     link.list_of_fibers, available_index_of_channel[-1])
                                                 if fiber_index != None:
                                                     fibers_list.append(fiber_index)
+                                                    # for reverse direction
+                                                    fibers_list.append(fiber_index)
                                                     fiber_object.append(link.list_of_fibers[fiber_index])
                                                 else:
                                                     print("{}th part of Demand {} can not be routed on path {}".format(
                                                         list_of_lightpath.index(lightpath), [dem.src, dem.dst], path))
                                                     fibers_list.append(1000)
+                                                break
+
+                                            ### do same for reverse links ###
+                                        for link in all_links:
+                                            if (link.src == links_on_this_path[lin_idx][1]) and \
+                                                    (link.dst == links_on_this_path[lin_idx][0]):
+                                                fiber_object.append(link.list_of_fibers[fiber_index])
                                                 break
 
                                 available_fibers_on_each_link_of_the_path.append(fibers_list)
@@ -540,48 +597,66 @@ with open('results_v2.txt', 'w', encoding="utf-8") as f:
                             list_of_maximum_used_fiber_index_for_each_period.append(
                                 available_fibers_on_each_link_of_the_path[index_of_selected_path_for_this_lightpath])
                             links_for_the_selected_path = get_all_links_of_path(
-                                dem.get_three_shortest_paths()[index_of_selected_path_for_this_lightpath])
+                                dem.get_three_shortest_paths()[index_of_selected_path_for_this_lightpath], reverse=True)
                             for lll_idx in range(len(links_for_the_selected_path)):
                                 for obj_link in all_links:
                                     if (obj_link.src == links_for_the_selected_path[lll_idx][0]) and\
                                             (obj_link.dst == links_for_the_selected_path[lll_idx][1]):
                                         obj_link.state_of_fibers[available_fibers_on_each_link_of_the_path[
                                             index_of_selected_path_for_this_lightpath][lll_idx]] = 1
-
-                            print("Demand {} with rate {} Gbps in time period {} uses {} Gbps of {}th transponders on path {} with this fiber indices {}".format(
+                            if True:
+                                print("Demand between {} with rate {} Gbps in time period {} uses {} Gbps of {}th transponders on path {} with this fiber indices {}".format(
                                 [dem.src, dem.dst], dem.n_25G_traffic * 25, period_idx,
                                 100 * sum(lightpath.dedicated_transponder.state_of_slots)/4, selected_channel_for_this_lightpath,
                                 dem.get_three_shortest_paths()[index_of_selected_path_for_this_lightpath],
                                 available_fibers_on_each_link_of_the_path[index_of_selected_path_for_this_lightpath]))
 
                 # show table of the state of different transponders:
-            table = [['Transponder Index', 'Source', 'Destination', 'Used Capacity [Gbps]', 'Residual Capacity [Gbps]', 'Path',
-                      'Fiber Index', 'Channel']]
+            table = [['Index', 'Installed in Node', 'Source', 'Destination', 'Used Capacity [Gbps]', 'Residual Capacity [Gbps]', 'Path', 'Channel']]
+            used_src_dst_for_transponders = []
+            n_activate_transponders = 0
             for my_tr_idx in range(len(list_of_all_used_transponders)):
                 my_tr = list_of_all_used_transponders[my_tr_idx]
                 if my_tr.transponder_is_active:
-                    tab_content = [my_tr_idx, my_tr.assigned_demand.src, my_tr.assigned_demand.dst, 25 * sum(my_tr.state_of_slots),
-                                   25 * my_tr.get_remain_capacity(), my_tr.assigned_path_for_demand, my_tr.reference_fiber,
+                    if [my_tr.assigned_demand.dst, my_tr.assigned_demand.src] in used_src_dst_for_transponders:
+                        continue
+                    else:
+                        n_activate_transponders += 1
+                        tab_content = [n_activate_transponders, my_tr.assigned_demand.src, my_tr.assigned_demand.src, my_tr.assigned_demand.dst, 25 * sum(my_tr.state_of_slots),
+                                   25 * my_tr.get_remain_capacity(), my_tr.assigned_path_for_demand,
+                                       #my_tr.reference_fiber,
                                    my_tr.assigned_channel_idx]
-                    table.append(tab_content)
+                        table.append(tab_content)
+
+                        n_activate_transponders += 1
+                        tab_content = [n_activate_transponders, my_tr.assigned_demand.dst, my_tr.assigned_demand.src, my_tr.assigned_demand.dst,
+                                       25 * sum(my_tr.state_of_slots),
+                                       25 * my_tr.get_remain_capacity(), my_tr.assigned_path_for_demand,
+                                       #my_tr.reference_fiber,
+                                       my_tr.assigned_channel_idx]
+                        table.append(tab_content)
+                        used_src_dst_for_transponders.append([my_tr.assigned_demand.src, my_tr.assigned_demand.dst])
 
             print(tabulate(table, headers='firstrow', tablefmt='fancy_grid'))
 
 # print("Maximum index of used fiber is {}".format(max(list_of_maximum_used_fiber_index_for_each_period)))
 total_number_of_fibers_in_networks = 0
-for my_object_link in all_links:
-    total_number_of_fibers_in_networks += sum(my_object_link.state_of_fibers)
-    print("For link {} we need to locate {} fibers".format([my_object_link.src, my_object_link.dst],
-                                                           sum(my_object_link.state_of_fibers)))
+for my_object_link_idx in range(len(all_links)):
+    my_object_link = all_links[my_object_link_idx]
+    if my_object_link_idx % 2 == 0:
+        total_number_of_fibers_in_networks += sum(my_object_link.state_of_fibers)
+        print("For link {} we need to locate {} fiber pairs".format([my_object_link.src, my_object_link.dst],
+                                                           max([sum(my_object_link.state_of_fibers),
+                                                                sum(all_links[my_object_link_idx].state_of_fibers)])))
 
-print("************ total number of requred fibers in the network is {}".format(total_number_of_fibers_in_networks))
+print("************ total number of required fiber pairs in the network is {}".format(total_number_of_fibers_in_networks))
 
 number_of_transponders_for_each_node = [len(
-                    [tr for tr in list_of_all_used_transponders if tr.reference_node == node]) for node in all_nodes]
+                    [tr for tr in list_of_all_used_transponders if (tr.reference_node == node or tr.other_terminal_node == node)]) for node in all_nodes]
 
 print(number_of_transponders_for_each_node)
-print("Last index of used channel in the network is {}".format(max([
-                                                lpath.selected_channel_idx for lpath in list_of_all_used_lightpaths])))
+# print("Last index of used channel in the network is {}".format(max([
+#                                                 lpath.selected_channel_idx for lpath in list_of_all_used_lightpaths])))
 print("Total number of used transponders in the network is {}".format(sum(number_of_transponders_for_each_node)))
 
 ####### The END ########
