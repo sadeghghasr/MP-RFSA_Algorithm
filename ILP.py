@@ -17,13 +17,13 @@ list_of_links = [(1, 2), (2, 1)]
 n_links = len(list_of_links)
 list_of_demands = [(1, 2), (2, 1)]
 list_of_nodes = [1, 2]
-n_lp = 1  # number of lightpath on each fiber of each link
+n_lp = 2  # number of lightpath on each fiber of each link
 n_demands = len(list_of_demands)
-n_transponder_slots = 1  # number of 25 Gbps slots
-n_periods = 2
-n_paths = 3  # number of paths for each demand
-R_t_d = np.array([[1, 1], [2, 2]]).reshape(n_periods * n_demands, 1)
-set_of_paths_for_each_demand = [[[1, 2]]]  # pattern: [dem0: [path0, path1, path2], dem1: [path0, path1, path2], ...]
+n_transponder_slots = 4  # number of 25 Gbps slots
+n_periods = 3
+n_paths = 1  # number of paths for each demand
+R_t_d = np.array([[1, 1], [5, 5], [2, 2]]).reshape(n_periods * n_demands, 1)
+set_of_paths_for_each_demand = [[[[1, 2]]], [[[2, 1]]]]  # pattern: [dem0: [path0:[link1, link2, ...], path1, path2], dem1: [path0, path1, path2], ...]
 
 # ILP variables:
 x_i_l_f_n = cp.Variable((n_nodes * n_links * max_number_fiber * n_lp, 1), boolean=True)
@@ -167,19 +167,19 @@ A_5_right = np.array([]).reshape((0, 0))
 for t_period in range(n_periods):
     basic_block_A_5_right = np.array([]).reshape((0, 0))
     for dem in range(n_demands):
-        sub_basic_block_A_5_right = np.array([]).reshape((0, n_links * n_transponder_slots * max_number_fiber))
+        sub_basic_block_A_5_right = np.array([]).reshape((0, n_links * n_lp * max_number_fiber))
         for n_idx in range(n_nodes):
             sub_sub_basic_block = np.array([]).reshape((0, 0))
             for l_idx in range(n_links):
                 if list_of_links[l_idx][0] == list_of_nodes[n_idx]:
-                    sub_sub_basic_block = block_diag(sub_sub_basic_block, np.eye(max_number_fiber * n_transponder_slots))
+                    sub_sub_basic_block = block_diag(sub_sub_basic_block, np.eye(max_number_fiber * n_lp))
                 else:
-                    sub_sub_basic_block = block_diag(sub_sub_basic_block, 0 * np.eye(max_number_fiber * n_transponder_slots))
+                    sub_sub_basic_block = block_diag(sub_sub_basic_block, 0 * np.eye(max_number_fiber * n_lp))
 
             if list_of_demands[dem][0] == list_of_nodes[n_idx]:
-                sub_basic_block_A_5_right = np.concatenate((sub_basic_block_A_5_right, sub_sub_basic_block), 0)
+                sub_basic_block_A_5_right = np.concatenate((sub_basic_block_A_5_right, sub_sub_basic_block), axis=0)
             else:
-                sub_basic_block_A_5_right = np.concatenate((sub_basic_block_A_5_right, 0 * sub_sub_basic_block), 0)
+                sub_basic_block_A_5_right = np.concatenate((sub_basic_block_A_5_right, 0 * sub_sub_basic_block), axis=0)
 
         basic_block_A_5_right = block_diag(basic_block_A_5_right, sub_basic_block_A_5_right)
 
@@ -230,7 +230,52 @@ for t_period in range(n_periods):
 const7 = A_7_left @ c_t_d_l_f_n == A_7_right @ x_t_d_p_f_n
 
     ### constraint 8 ###
+pre_block_A_8 = np.array([]).reshape((0, 0))
+for _ in range(max_number_fiber * n_lp):
+    pre_block_A_8 = block_diag(pre_block_A_8, np.ones((1, n_transponder_slots)))
 
+A_8 = np.array([]).reshape((0, 0))
+for t_period in range(n_periods):
+    basic_A_8 = np.array([]).reshape((n_nodes * n_links * max_number_fiber * n_lp, 0))
+    for dem in range(n_demands):
+        sub_basic_block_A_8 = np.array([]).reshape((0, 0))
+        for n_idx in range(n_nodes):
+            sub_sub_basic_block = np.array([]).reshape((0, 0))
+            for l_idx in range(n_links):
+                if list_of_links[l_idx][0] == list_of_nodes[n_idx]:
+                    sub_sub_basic_block = block_diag(sub_sub_basic_block, pre_block_A_8)
+                else:
+                    sub_sub_basic_block = block_diag(sub_sub_basic_block, 0 * pre_block_A_8)
 
+            if list_of_demands[dem][0] == list_of_nodes[n_idx]:
+                sub_basic_block_A_8 = block_diag(sub_basic_block_A_8, sub_sub_basic_block)
+            else:
+                sub_basic_block_A_8 = block_diag(sub_basic_block_A_8, 0 * sub_sub_basic_block)
+        basic_A_8 = np.concatenate((basic_A_8, sub_basic_block_A_8), axis=1)
+    A_8 = block_diag(A_8, basic_A_8)
 
+const8 = A_8 @ y_t_d_i_l_f_n_k <= n_transponder_slots
+
+    ### constraint 9 ###
+basic_block_A_9 = np.array([]).reshape((0, 0))
+for _ in range(n_links * max_number_fiber):
+    basic_block_A_9 = block_diag(basic_block_A_9, np.ones((1, n_lp)))
+
+A_9 = basic_block_A_9
+for _ in range(n_demands * n_periods - 1):
+    A_9 = np.concatenate((A_9, basic_block_A_9), axis=1)
+
+big_M = n_periods * n_demands * n_lp
+const9_1 = (1/big_M) * A_9 @ c_t_d_l_f_n <= x_l_f
+const9_2 = x_l_f <= A_9 @ c_t_d_l_f_n
+##################################################################
+# Problem Definition:
+
+constrains = [const1_1, const1_2, const2, const3, const4_1, const4_2, const5,
+              const6, const7, const8, const9_1, const9_2]
+objective = cp.Minimize(sum(x_i_l_f_n) + sum(x_l_f))
+
+prob = cp.Problem(objective, constrains)
+prob.solve()
+print(prob.value)
 
