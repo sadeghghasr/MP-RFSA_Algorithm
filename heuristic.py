@@ -19,6 +19,11 @@ import pickle
 global n_channels_in_each_fiber
 n_channels_in_each_fiber = 96
 
+global random_fit_spectrum_assignment
+random_fit_spectrum_assignment = 1
+
+global perform_grooming
+perform_grooming = 0
 
 ############# Class Definitions ###############
 class Link:
@@ -47,11 +52,14 @@ class Fiber:
         self.channels_state[idx_of_channel] = 1
 
     def find_index_of_first_available_channel(self):
-        if 0 in self.channels_state:
-            return self.channels_state.index(0)
+        if random_fit_spectrum_assignment == 1:
+            return random.randint(0, n_channels_in_each_fiber-1)
         else:
-            print("there is no available channel")
-            return None
+            if 0 in self.channels_state:
+                return self.channels_state.index(0)
+            else:
+                print("there is no available channel")
+                return None
 
 
 class Transponder:
@@ -107,8 +115,8 @@ class Transponder:
                 if (obj_ll.src == self.reference_link[l_id][0] and obj_ll.dst == self.reference_link[l_id][1]) or (
                         obj_ll.src == self.reference_link[l_id][1] and obj_ll.dst == self.reference_link[l_id][0]):
                     obj_ll.list_of_fibers[self.reference_fiber[l_id]].channels_state[self.assigned_channel_idx] = 0
-                if sum(obj_ll.list_of_fibers[self.reference_fiber[l_id]].channels_state) == 0:
-                    obj_ll.state_of_fibers[self.reference_fiber[l_id]] = 0
+                # if sum(obj_ll.list_of_fibers[self.reference_fiber[l_id]].channels_state) == 0:
+                #     obj_ll.state_of_fibers[self.reference_fiber[l_id]] = 0
 
         # everything must be reset except the installed node
         self.reference_fiber = None
@@ -181,7 +189,7 @@ class Demand:
     def get_three_shortest_paths(self):
         self.three_shortest_paths = []
         sp = nx.shortest_simple_paths(self.network_topology, self.src, self.dst)
-        k = 1  # for simplicity, we use only the shortest path
+        k = 3  # for simplicity, we use only the shortest path
         for counter, path in enumerate(sp):
             self.three_shortest_paths.append(path)
             if counter == k - 1:
@@ -283,12 +291,12 @@ for i in range(total_number_of_periods):
     time_periods.append(tp)
 
 # save traffic matrix for first time:
-with open('traffic_matrix10.pickle', 'wb') as f:
-    pickle.dump(traffic_matrix, f, protocol=pickle.HIGHEST_PROTOCOL)
+# with open('traffic_matrix10.pickle', 'wb') as f:
+#     pickle.dump(traffic_matrix, f, protocol=pickle.HIGHEST_PROTOCOL)
 
 # load traffic matrix:
-# with open('traffic_matrix10.pickle', 'rb') as f:
-#     traffic_matrix = pickle.load(f)
+with open('traffic_matrix1.pickle', 'rb') as f:
+    traffic_matrix = pickle.load(f)
 
 ### main algorithm ###
 with open('results_v2.txt', 'w', encoding="utf-8") as f:
@@ -298,7 +306,7 @@ with open('results_v2.txt', 'w', encoding="utf-8") as f:
         list_of_maximum_used_fiber_index_for_each_period = []
         for period_idx in range(len(time_periods)):
             period = time_periods[period_idx]
-            period.load_traffic_matrix(traffic_matrix[period_idx])
+            period.load_traffic_matrix(traffic_matrix[period_idx])#[traffic_matrix[period_idx][1], traffic_matrix[period_idx][4]])
             print("\n***************************************** Time Period {} ****************************************\n".format(period_idx))
             for dem_idx in range(len(period.traffic_matrix)):
                 dem = period.traffic_matrix[dem_idx]
@@ -464,21 +472,22 @@ with open('results_v2.txt', 'w', encoding="utf-8") as f:
                                                                                time_periods[
                                                                                    period_idx - 1].traffic_matrix if (
                                                                         ddd.src == dem.src and ddd.dst == dem.dst)][0]
-                        for used_lp in list_of_all_used_lightpaths:
-                            if (used_lp.basic_demand.src == dem.src) and (used_lp.basic_demand.dst == dem.dst):
-                                remained_cap = used_lp.dedicated_transponder.get_remain_capacity()
-                                if remained_cap:
-                                    for sl in range(remained_cap):
-                                        if dem.number_of_served_slots < dem.n_25G_traffic:
-                                            dem.number_of_served_slots += 1
-                                            used_lp.dedicated_transponder.fill_slots(1, period_idx)
-                                    if True:
-                                        print(
-                                        "{} Gbps of Demand between {} with total traffic {} in time period {} is groomed with previously used transponder initiated at fiber {} of link {}".format(
-                                            (remained_cap - used_lp.dedicated_transponder.get_remain_capacity()) * 25,
-                                            [dem.src, dem.dst], dem.n_25G_traffic * 25, period_idx,
-                                            used_lp.dedicated_transponder.reference_fiber[0],
-                                            used_lp.dedicated_transponder.reference_link[0]))
+                        if perform_grooming == 1:
+                            for used_lp in list_of_all_used_lightpaths:
+                                if (used_lp.basic_demand.src == dem.src) and (used_lp.basic_demand.dst == dem.dst):
+                                    remained_cap = used_lp.dedicated_transponder.get_remain_capacity()
+                                    if remained_cap:
+                                        for sl in range(remained_cap):
+                                            if dem.number_of_served_slots < dem.n_25G_traffic:
+                                                dem.number_of_served_slots += 1
+                                                used_lp.dedicated_transponder.fill_slots(1, period_idx)
+                                        if True:
+                                            print(
+                                            "{} Gbps of Demand between {} with total traffic {} in time period {} is groomed with previously used transponder initiated at fiber {} of link {}".format(
+                                                (remained_cap - used_lp.dedicated_transponder.get_remain_capacity()) * 25,
+                                                [dem.src, dem.dst], dem.n_25G_traffic * 25, period_idx,
+                                                used_lp.dedicated_transponder.reference_fiber[0],
+                                                used_lp.dedicated_transponder.reference_link[0]))
 
 
                         n_lightpaths = int(np.ceil((dem.n_25G_traffic - dem.number_of_served_slots)/4))
