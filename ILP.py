@@ -11,19 +11,21 @@ from scipy.sparse import csc_matrix, hstack, vstack
 
 
 # parameters:
-max_number_fiber = 1
-n_nodes = 2
-list_of_links = [(1, 2), (2, 1)]
+max_number_fiber = 2
+n_nodes = 3
+list_of_links = [(1, 2), (2, 1), (2, 3), (3, 2)]
 n_links = len(list_of_links)
+# list_of_demands = [(1, 2), (2, 1), (1, 3), (3, 1)]
 list_of_demands = [(1, 2), (2, 1)]
-list_of_nodes = [1, 2]
-n_lp = 2  # number of lightpath on each fiber of each link
+list_of_nodes = [1, 2, 3]
+n_lp = 4  # number of lightpath on each fiber of each link
 n_demands = len(list_of_demands)
 n_transponder_slots = 4  # number of 25 Gbps slots
-n_periods = 3
+n_periods = 1
 n_paths = 1  # number of paths for each demand
-R_t_d = np.array([[1, 1], [5, 5], [2, 2]]).reshape(n_periods * n_demands, 1)
-set_of_paths_for_each_demand = [[[[1, 2]]], [[[2, 1]]]]  # pattern: [dem0: [path0:[link1, link2, ...], path1, path2], dem1: [path0, path1, path2], ...]
+# R_t_d = np.array([[1, 1, 4, 4], [5, 5, 3, 3], [2, 2, 4, 4]]).reshape(n_periods * n_demands, 1)
+R_t_d = np.array([[1, 1]]).reshape(n_periods * n_demands, 1)
+set_of_paths_for_each_demand = [[[[1, 2]]], [[[2, 1]]], [[[1, 2], [2, 3]]], [[[3, 2], [2, 1]]]]  # pattern: [dem0: [path0:[link1, link2, ...], path1, path2], dem1: [path0, path1, path2], ...]
 
 # ILP variables:
 x_i_l_f_n = cp.Variable((n_nodes * n_links * max_number_fiber * n_lp, 1), boolean=True)
@@ -229,6 +231,66 @@ for t_period in range(n_periods):
 
 const7 = A_7_left @ c_t_d_l_f_n == A_7_right @ x_t_d_p_f_n
 
+    ### constraint 7 + 1 (7p1) ###
+A_7p1_left = np.array([]).reshape((0, 0))
+for t_period in range(n_periods):
+    basic_block_7p1_left = np.array([]).reshape((0, 0))
+    for dem in range(n_demands):
+        sub_basic_block_A_7p1_left = np.array([]).reshape((0, n_links * n_lp * max_number_fiber))
+        for dem_prime in range(n_demands):
+            sub_sub_basic_block = np.array([]).reshape((0, 0))
+            for l_idx in range(n_links):
+                sub_sub_sub_basic_block = np.array([]).reshape((0, max_number_fiber * n_lp))
+                for l_idx_prime in range(n_links):
+                    if (list_of_links[l_idx][0] == list_of_links[l_idx_prime][1]) and\
+                                (list_of_links[l_idx][1] == list_of_links[l_idx_prime][0]):
+                        sub_sub_sub_basic_block = np.concatenate((sub_sub_sub_basic_block,
+                                                                  np.eye(max_number_fiber * n_lp)), axis=0)
+                    else:
+                        sub_sub_sub_basic_block = np.concatenate((sub_sub_sub_basic_block,
+                                                                  0 * np.eye(max_number_fiber * n_lp)), axis=0)
+                sub_sub_basic_block = block_diag(sub_sub_basic_block, sub_sub_sub_basic_block)
+
+            if (list_of_demands[dem][0] == list_of_demands[dem_prime][1]) and \
+                    (list_of_demands[dem][1] == list_of_demands[dem_prime][0]):
+                sub_basic_block_A_7p1_left = np.concatenate((sub_basic_block_A_7p1_left, sub_sub_basic_block), axis=0)
+            else:
+                sub_basic_block_A_7p1_left = np.concatenate((sub_basic_block_A_7p1_left, 0 * sub_sub_basic_block), axis=0)
+
+        basic_block_7p1_left = block_diag(basic_block_7p1_left, sub_basic_block_A_7p1_left)
+
+    A_7p1_left = block_diag(A_7p1_left, basic_block_7p1_left)
+
+A_7p1_right = np.array([]).reshape((0, 0))
+for t_period in range(n_periods):
+    basic_block_7p1_right = np.array([]).reshape((0, n_demands * n_links * n_lp * max_number_fiber))
+    for dem in range(n_demands):
+        sub_basic_block_A_7p1_right = np.array([]).reshape((0, 0))
+        for dem_prime in range(n_demands):
+            sub_sub_basic_block = np.array([]).reshape((0, n_links * max_number_fiber * n_lp))
+            for l_idx in range(n_links):
+                sub_sub_sub_basic_block = np.array([]).reshape((0, 0))
+                for l_idx_prime in range(n_links):
+                    if (list_of_links[l_idx][0] == list_of_links[l_idx_prime][1]) and \
+                            (list_of_links[l_idx][1] == list_of_links[l_idx_prime][0]):
+                        sub_sub_sub_basic_block = block_diag(sub_sub_sub_basic_block, np.eye(n_lp * max_number_fiber))
+                    else:
+                        sub_sub_sub_basic_block = block_diag(sub_sub_sub_basic_block, 0 * np.eye(n_lp * max_number_fiber))
+
+                sub_sub_basic_block = np.concatenate((sub_sub_basic_block, sub_sub_sub_basic_block), axis=0)
+
+            if (list_of_demands[dem][0] == list_of_demands[dem_prime][1]) and \
+                    (list_of_demands[dem][1] == list_of_demands[dem_prime][0]):
+                sub_basic_block_A_7p1_right = block_diag(sub_basic_block_A_7p1_right, sub_sub_basic_block)
+            else:
+                sub_basic_block_A_7p1_right = block_diag(sub_basic_block_A_7p1_right, 0 * sub_sub_basic_block)
+
+        basic_block_7p1_right = np.concatenate((basic_block_7p1_right, sub_basic_block_A_7p1_right), axis=0)
+
+    A_7p1_right = block_diag(A_7p1_right, basic_block_7p1_right)
+
+const7p1 = A_7p1_left @ c_t_d_l_f_n == A_7p1_right @ c_t_d_l_f_n
+
     ### constraint 8 ###
 pre_block_A_8 = np.array([]).reshape((0, 0))
 for _ in range(max_number_fiber * n_lp):
@@ -272,10 +334,24 @@ const9_2 = x_l_f <= A_9 @ c_t_d_l_f_n
 # Problem Definition:
 
 constrains = [const1_1, const1_2, const2, const3, const4_1, const4_2, const5,
-              const6, const7, const8, const9_1, const9_2]
+              const6, const7, const7p1, const8, const9_1, const9_2]
 objective = cp.Minimize(sum(x_i_l_f_n) + sum(x_l_f))
 
 prob = cp.Problem(objective, constrains)
 prob.solve()
 print(prob.value)
+
+### Print the results ###
+dict_list_fiber = {}
+for lin in list_of_links:
+    dict_list_fiber['{}'.format(lin)] = 0
+
+for idx in range(len(x_l_f.value.tolist())):
+    if x_l_f.value.tolist()[idx][0] == 1:
+        link_idx = idx // max_number_fiber
+        fiber_idx = idx % max_number_fiber
+        dict_list_fiber['{}'.format(list_of_links[link_idx])] += 1
+        dict_list_fiber['{}'.format((list_of_links[link_idx][1], list_of_links[link_idx][0]))] += 1
+
+print("In the network we need {} fiber pairs".format(sum(dict_list_fiber.values())/4))
 
