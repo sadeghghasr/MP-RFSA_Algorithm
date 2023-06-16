@@ -6,26 +6,57 @@ Author: Sadegh ----> sadeghghasr8817@gmail.com
 import cvxpy as cp
 import numpy as np
 from scipy.linalg import block_diag
-from scipy.sparse import block_diag as sparse_block_diag
+from scipy.sparse import block_diag as sparse_block_diag  # sparse matrices are used for problem with higher dimensions
 from scipy.sparse import csc_matrix, hstack, vstack
+import networkx as nx
 
+
+######## Definition of functions ########
+def get_three_shortest_paths(net_top, src, dst, nPaths):
+    three_shortest_paths = []
+    sp = nx.shortest_simple_paths(net_top, src, dst)
+    k = nPaths  # for simplicity, we use only the shortest path
+    for counter, path in enumerate(sp):
+        three_shortest_paths.append(path)
+        if counter == k - 1:
+            break
+    return three_shortest_paths
 
 # parameters:
 max_number_fiber = 2
-n_nodes = 3
-list_of_links = [(1, 2), (2, 1), (2, 3), (3, 2)]
+n_nodes = 4
+list_of_links = [(1, 2), (2, 1), (1, 3), (3, 1), (1, 4), (4, 1), (2, 3), (3, 2), (2, 4), (4, 2), (3, 4), (4, 3)]
 n_links = len(list_of_links)
 # list_of_demands = [(1, 2), (2, 1), (1, 3), (3, 1)]
-list_of_demands = [(1, 2), (2, 1)]
-list_of_nodes = [1, 2, 3]
-n_lp = 4  # number of lightpath on each fiber of each link
+list_of_demands = [(1, 2), (2, 1), (1, 3), (3, 1), (1, 4), (4, 1), (2, 3), (3, 2), (2, 4), (4, 2), (3, 4), (4, 3)]
+list_of_nodes = [1, 2, 3, 4]
+
+network = nx.Graph()
+network.add_nodes_from(list_of_nodes)
+network.add_edges_from(list_of_links)
+
+
+
+n_lp = 3  # number of lightpath on each fiber of each link
 n_demands = len(list_of_demands)
 n_transponder_slots = 4  # number of 25 Gbps slots
-n_periods = 1
-n_paths = 1  # number of paths for each demand
-# R_t_d = np.array([[1, 1, 4, 4], [5, 5, 3, 3], [2, 2, 4, 4]]).reshape(n_periods * n_demands, 1)
-R_t_d = np.array([[1, 1]]).reshape(n_periods * n_demands, 1)
-set_of_paths_for_each_demand = [[[[1, 2]]], [[[2, 1]]], [[[1, 2], [2, 3]]], [[[3, 2], [2, 1]]]]  # pattern: [dem0: [path0:[link1, link2, ...], path1, path2], dem1: [path0, path1, path2], ...]
+n_periods = 2
+n_paths = 3  # number of paths for each demand
+R_t_d = np.array([[1, 1, 4, 4, 6, 6, 3, 3, 5, 5, 1, 1],
+                  [2, 2, 4, 4, 4, 4, 3, 3, 7, 7, 6, 6]]).reshape(n_periods * n_demands, 1)
+                  # [4, 4, 2, 2, 2, 2, 3, 3, 6, 6, 4, 4, 2, 2, 6, 6, 5, 5, 3, 3]])
+
+# set_of_paths_for_each_demand = [[[[1, 2]]], [[[2, 1]]], [[[1, 2], [2, 3]]], [[[3, 2], [2, 1]]]]  # pattern: [dem0: [path0:[link1, link2, ...], path1, path2], dem1: [path0, path1, path2], ...]
+set_of_paths_for_each_demand = []
+for dem in list_of_demands:
+    shortest_paths = get_three_shortest_paths(network, dem[0], dem[1], n_paths)
+    lis_for_each_dem = []
+    for path in shortest_paths:
+        links_on_each_path = []
+        for i in range(len(path) - 1):
+            links_on_each_path.append([path[i], path[i+1]])
+        lis_for_each_dem.append(links_on_each_path)
+    set_of_paths_for_each_demand.append(lis_for_each_dem)
 
 # ILP variables:
 x_i_l_f_n = cp.Variable((n_nodes * n_links * max_number_fiber * n_lp, 1), boolean=True)
